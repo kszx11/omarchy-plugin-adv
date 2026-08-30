@@ -5,14 +5,14 @@
   "version": "0.1.0",
   "author": "kszx11",
   "license": "MIT",
-  "description": "A keyboard-first, AI-powered text adventure for Omarchy. Begin in any place and time, explore a living world, talk with memorable characters, uncover clues, and shape the story through your choices.",
+  "description": "A keyboard-first, AI-powered text adventure for Omarchy. Begin in any place and time, explore a living world, talk with memorable characters, uncover clues, and shape the story through your choices. Requires an OpenAI API key with API billing.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Adventure",
-    "description": "Begin an AI-powered adventure in any place and time.",
+    "description": "Begin an AI-powered adventure in any place and time. Requires an OpenAI API key.",
     "category": "Fun",
     "aliases": ["adventure", "game"],
     "allowMultiple": false,

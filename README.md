@@ -2,6 +2,8 @@
 
 A keyboard-first, AI-powered text adventure for Omarchy. Begin in any place and time, explore a living world, talk with memorable characters, uncover clues, and shape the story through your choices.
 
+Requires an OpenAI API key with API billing; a ChatGPT subscription alone does not provide API access.
+
 ![Adventure gameplay preview](preview.png)
 
 ## Install
