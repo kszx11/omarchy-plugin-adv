@@ -6,6 +6,14 @@ Requires an OpenAI API key with API billing; a ChatGPT subscription alone does n
 
 ![Adventure gameplay preview](preview.png)
 
+## Requirements and privacy
+
+- Omarchy 4.0 (Quattro) with Quickshell plugin support.
+- Internet access and an OpenAI API key with API billing.
+- No elevated privileges, install hooks, or external local services.
+
+The game sends player commands and game context directly to the OpenAI API. It reads `OPENAI_API_KEY` when available; otherwise, an entered key is stored locally in `~/.local/state/omarchy-adventure/api-key.json`, inside an owner-only directory. Game saves are stored locally in `~/.local/state/omarchy-adventure.json`.
+
 ## Install
 
 Validate the checked-out plugin:
@@ -37,3 +45,11 @@ The save migration, NPC matching, exit validation, and transcript serialization 
 ```bash
 node tests/adventure-logic.test.js
 ```
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.kszx11.adventure
+```
+
+Removing the plugin leaves your local key and saves intact. To erase that data as well, remove `~/.local/state/omarchy-adventure/` and `~/.local/state/omarchy-adventure.json` yourself.
