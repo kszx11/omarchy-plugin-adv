@@ -6,6 +6,10 @@ Requires an OpenAI API key with API billing; a ChatGPT subscription alone does n
 
 ![Adventure gameplay preview](preview.png)
 
+## Exploration
+
+Every new adventure opens in a broad named region with at least three meaningful routes. As you travel, the game reveals connected settlements, wilderness, landmarks, and other named locations; the map records routes you have discovered. Ordinary scenes keep at least two ways forward, while true endings and temporary defeats are the only intentional exceptions.
+
 ## Requirements and privacy
 
 - Omarchy 4.0 (Quattro) with Quickshell plugin support.
