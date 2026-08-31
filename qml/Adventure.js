@@ -16,20 +16,18 @@ var statsSchema = {
 }
 var actionSchema = {
     type: "json_schema",
-    json_schema: {
-        name: "adventure_action",
-        strict: true,
-        schema: {
-            type: "object",
-            properties: {
-                narration: { type: "string" }, location: { type: "string" }, moved: { type: "boolean" }, isEnding: { type: "boolean" },
-                exits: { type: "array", items: { type: "string" } }, npcs: { type: "array", items: { type: "string" } },
-                items: { type: "array", items: { type: "string" } }, inventory: { type: "array", items: { type: "string" } },
-                journal: { type: "array", items: { type: "string" } }, stats: statsSchema
-            },
-            required: ["narration", "location", "moved", "isEnding", "exits", "npcs", "items", "inventory", "journal", "stats"],
-            additionalProperties: false
-        }
+    name: "adventure_action",
+    strict: true,
+    schema: {
+        type: "object",
+        properties: {
+            narration: { type: "string" }, location: { type: "string" }, moved: { type: "boolean" }, isEnding: { type: "boolean" },
+            exits: { type: "array", items: { type: "string" } }, npcs: { type: "array", items: { type: "string" } },
+            items: { type: "array", items: { type: "string" } }, inventory: { type: "array", items: { type: "string" } },
+            journal: { type: "array", items: { type: "string" } }, stats: statsSchema
+        },
+        required: ["narration", "location", "moved", "isEnding", "exits", "npcs", "items", "inventory", "journal", "stats"],
+        additionalProperties: false
     }
 }
 
@@ -64,7 +62,31 @@ function validStats(stats) {
 function normalizedStats(stats, fallback) { return validStats(stats) ? stats : clone(fallback) }
 function normalizedStrings(values, fallback) { return Array.isArray(values) ? stringsOnly(values) : clone(fallback) }
 
-function request(apiKey, payload, callback, attempt) {
+function responseText(body) {
+    if (typeof body.output_text === "string" && body.output_text.trim()) return body.output_text
+    if (!Array.isArray(body.output)) return ""
+    var parts = []
+    for (var outputIndex = 0; outputIndex < body.output.length; outputIndex++) {
+        var output = body.output[outputIndex]
+        if (!output || !Array.isArray(output.content)) continue
+        for (var contentIndex = 0; contentIndex < output.content.length; contentIndex++) {
+            var part = output.content[contentIndex]
+            if (part && part.type === "output_text" && typeof part.text === "string") parts.push(part.text)
+        }
+    }
+    return parts.join("")
+}
+function emptyResponseError(body) {
+    if (body && body.status === "incomplete") {
+        var reason = body.incomplete_details && body.incomplete_details.reason
+        return reason === "max_output_tokens"
+            ? "The model ran out of response space. Retrying with a larger budget."
+            : "The model response was incomplete. Retrying."
+    }
+    if (body && body.error && body.error.message) return body.error.message
+    return "The API completed the request but returned no readable text."
+}
+function request(apiKey, messages, maxTokens, format, callback, attempt) {
     attempt = attempt || 0
     var xhr = new XMLHttpRequest()
     var finished = false
@@ -72,7 +94,7 @@ function request(apiKey, payload, callback, attempt) {
         if (finished) return
         finished = true
         if (error && retryable && attempt < 2) {
-            setTimeout(function() { request(apiKey, payload, callback, attempt + 1) }, 500 * (attempt + 1))
+            setTimeout(function() { request(apiKey, messages, maxTokens, format, callback, attempt + 1) }, 500 * (attempt + 1))
             return
         }
         callback(content, error)
@@ -86,19 +108,29 @@ function request(apiKey, payload, callback, attempt) {
             finish(null, message, xhr.status === 0 || xhr.status === 429 || xhr.status >= 500)
             return
         }
-        var content = body.choices && body.choices[0] && body.choices[0].message ? body.choices[0].message.content : ""
-        finish(content || null, content ? null : "The API returned an empty response.", false)
+        var content = responseText(body)
+        var emptyError = emptyResponseError(body)
+        finish(content || null, content ? null : emptyError, body.status === "incomplete")
     }
     xhr.onerror = function() { finish(null, "Network error", true) }
     xhr.ontimeout = function() { finish(null, "The request timed out", true) }
-    xhr.timeout = 30000
-    xhr.open("POST", "https://api.openai.com/v1/chat/completions")
+    xhr.timeout = 60000
+    xhr.open("POST", "https://api.openai.com/v1/responses")
     xhr.setRequestHeader("Content-Type", "application/json")
     xhr.setRequestHeader("Authorization", "Bearer " + apiKey)
+    var payload = {
+        model: modelName,
+        input: messages,
+        // Luna reasons by default. Reserve enough room for its visible answer as well.
+        max_output_tokens: (maxTokens || 1800) + (attempt * 1000),
+        reasoning: { effort: "low" },
+        store: false
+    }
+    if (format) payload.text = { format: format }
     xhr.send(JSON.stringify(payload))
 }
 function textRequest(apiKey, messages, maxTokens, callback) {
-    request(apiKey, { model: modelName, messages: messages, max_completion_tokens: maxTokens || 700 }, callback)
+    request(apiKey, messages, maxTokens || 1400, null, callback)
 }
 
 function stateForModel(source) {
@@ -111,7 +143,7 @@ function stateForModel(source) {
 function actionRequest(apiKey, source, minimumExits, callback, repairAttempt) {
     var prompt = clone(source.history)
     prompt.push({ role: "developer", content: "Authoritative current game state (JSON): " + JSON.stringify(stateForModel(source)) + ". Resolve the player's most recent command. Return the full updated authoritative state in the required schema. Keep location unchanged and moved false unless the player successfully uses a listed exit. Preserve all inventory, journal, and stats unless the action credibly changes them. Unless this is a genuine completed ending or unavoidable temporary defeat, provide at least " + minimumExits + " meaningful, clearly named exits. At least one should lead to an unexplored neighboring location while the adventure is ongoing; do not trap the player in a small or dead-end world." })
-    request(apiKey, { model: modelName, messages: prompt, max_completion_tokens: 700, response_format: actionSchema }, function(content, error) {
+    request(apiKey, prompt, 1800, actionSchema, function(content, error) {
         if (error) { callback(null, error); return }
         try {
             var action = JSON.parse(content)

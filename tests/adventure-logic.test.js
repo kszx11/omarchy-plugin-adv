@@ -28,4 +28,12 @@ if (saved.version !== 2 || saved.transcript.length !== 1 || saved.player.invento
     throw new Error("Versioned save serialization failed")
 if (context.load("{}").ok !== false) throw new Error("Malformed saves must be rejected")
 
+if (context.responseText({ output_text: "Direct text" }) !== "Direct text")
+    throw new Error("Responses API direct text parsing failed")
+const responseWithContent = { output: [{ type: "reasoning", content: [] }, { type: "message", content: [{ type: "output_text", text: "Structured text" }] }] }
+if (context.responseText(responseWithContent) !== "Structured text")
+    throw new Error("Responses API output array parsing failed")
+if (!/ran out of response space/i.test(context.emptyResponseError({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" } })))
+    throw new Error("Incomplete Responses API errors should be actionable")
+
 console.log("Adventure logic checks passed")
