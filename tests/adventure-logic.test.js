@@ -24,9 +24,22 @@ if (!context.movementExit("go to the North: tower stair").exit) throw new Error(
 if (context.movementExit("go to nowhere").exit) throw new Error("Unknown exits must be rejected")
 
 const saved = JSON.parse(context.serialize([{ kind: "narrator", text: "A rain-soaked shrine." }]))
-if (saved.version !== 2 || saved.transcript.length !== 1 || saved.player.inventory[0] !== "Brass key")
+if (saved.version !== 3 || saved.transcript.length !== 1 || saved.player.inventory[0] !== "Brass key")
     throw new Error("Versioned save serialization failed")
 if (context.load("{}").ok !== false) throw new Error("Malformed saves must be rejected")
+
+const durableState = context.stateForModel(context.game)
+if (!durableState.worldRecord || durableState.worldRecord.discoveredLocations[0].name !== "Shrine")
+    throw new Error("Known locations should be included in the authoritative world record")
+context.applyAction(context.game, {
+    narration: "The ferrymaster reveals the bell remembers names.", location: "Shrine", moved: false, isEnding: false,
+    exits: ["North: tower stair"], npcs: ["Mara Vell, ferrymaster"], items: ["Bell"], inventory: ["Brass key"],
+    journal: ["Find the bell"], worldFacts: ["Mara Vell says the bell remembers names."], stats: context.game.player.stats
+}, "Shrine")
+if (context.game.world.facts[0] !== "Mara Vell says the bell remembers names.")
+    throw new Error("New durable world facts should persist across turns")
+if (context.historyCharacters([{ content: "abc" }, { content: "de" }]) !== 5)
+    throw new Error("History size accounting failed")
 
 if (context.responseText({ output_text: "Direct text" }) !== "Direct text")
     throw new Error("Responses API direct text parsing failed")
