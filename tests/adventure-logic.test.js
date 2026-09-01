@@ -85,6 +85,8 @@ if (panelSource.includes("FileView") || !source.includes("iflag=nofollow") || !s
     throw new Error("Local state must use no-follow reads and explicit private write modes")
 if (!panelSource.includes("stdinEnabled: true") || !panelSource.includes("clearEnvironment: true") || source.includes("p=$3"))
     throw new Error("State writers must accept data through stdin without inheriting the shell environment")
+if (!panelSource.includes("if (!apiKeyTouched) return") || !panelSource.includes("root.apiKeyTouched = true"))
+    throw new Error("Environment API keys must remain session-only until the user edits the field")
 
 function runStateCommand(command, input) {
     return spawnSync(command[0], command.slice(1), { input, encoding: "utf8" })

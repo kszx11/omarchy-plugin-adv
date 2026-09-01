@@ -101,6 +101,9 @@ Item {
         return ""
     }
     function persistApiKey() {
+        // A key inherited from OPENAI_API_KEY is intentionally session-only.
+        // Only an actual edit in the panel may request local persistence.
+        if (!apiKeyTouched) return
         if (!apiKeyValue.trim()) return
         if (!apiKeyLoaded) {
             apiKeySavePending = true
@@ -117,7 +120,7 @@ Item {
         apiKeyWriter.running = true
     }
     function commitEnteredApiKey() {
-        apiKeyTouched = true
+        if (!apiKeyTouched) return
         persistApiKey()
         restoreForKey(apiKeyValue.trim(), false)
     }
@@ -653,7 +656,10 @@ Item {
                                 placeholderText: "OpenAI API key"
                                 echoMode: TextInput.Password
                                 text: root.apiKeyValue
-                                onTextEdited: root.apiKeyValue = text
+                                onTextEdited: {
+                                    root.apiKeyValue = text
+                                    root.apiKeyTouched = true
+                                }
                                 onEditingFinished: root.commitEnteredApiKey()
                             }
                             Label {
