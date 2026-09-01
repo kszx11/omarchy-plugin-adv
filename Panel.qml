@@ -111,8 +111,8 @@ Item {
             apiKeyWritePending = true
             return
         }
+        apiKeyWriter.pendingInput = JSON.stringify({ apiKey: apiKeyValue.trim() }) + "\n"
         apiKeyWriter.command = Adventure.stateWriteCommand(privateStateDir, apiKeyFilename,
-                                                           JSON.stringify({ apiKey: apiKeyValue.trim() }) + "\n",
                                                            maxApiKeyFileBytes)
         apiKeyWriter.running = true
     }
@@ -227,7 +227,9 @@ Item {
                 if (alternate) delete next[alternate]
             }
         }
-        var serialized = JSON.stringify(next, null, 2) + "\n"
+        // Keep the stdin protocol single-line. JSON.stringify escapes any
+        // newlines contained in player or model text.
+        var serialized = JSON.stringify(next) + "\n"
         if (serialized.length > maxSavesFileCharacters) {
             addMessage("error", "Saved adventures exceed the safe storage limit; the current game was not written.")
             return
@@ -237,7 +239,8 @@ Item {
             savesWritePending = true
             return
         }
-        savesWriter.command = Adventure.stateWriteCommand(privateStateDir, savesFilename, serialized, maxSavesFileBytes)
+        savesWriter.pendingInput = serialized
+        savesWriter.command = Adventure.stateWriteCommand(privateStateDir, savesFilename, maxSavesFileBytes)
         savesWriter.running = true
     }
     function restoreForKey(key, announceMissing) {
@@ -358,6 +361,8 @@ Item {
     Process {
         id: ensurePrivateStateDir
         command: Adventure.privateStateSetupCommand(root.privateStateDir)
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
         onExited: function(code) {
             if (code === 0) {
                 root.apiKeyReadOutput = ""
@@ -376,6 +381,8 @@ Item {
     }
     Process {
         id: apiKeyReader
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
         stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.apiKeyReadOutput = text }
         onExited: function(code) {
             if (code === 0) root.loadApiKey(root.apiKeyReadOutput)
@@ -391,6 +398,8 @@ Item {
     }
     Process {
         id: savesReader
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
         stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.savesReadOutput = text }
         onExited: function(code) {
             if (code !== 0) {
@@ -410,6 +419,8 @@ Item {
     }
     Process {
         id: legacySavesReader
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
         stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.legacySavesReadOutput = text }
         onExited: function(code) {
             if (code === 0) root.loadSavedGames(root.legacySavesReadOutput)
@@ -424,6 +435,11 @@ Item {
     }
     Process {
         id: apiKeyWriter
+        property string pendingInput: ""
+        stdinEnabled: true
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
+        onStarted: write(pendingInput)
         onExited: function(code) {
             if (code !== 0) root.addMessage("error", "The API key could not be stored safely. It remains available only for this session.")
             if (root.apiKeyWritePending) {
@@ -434,6 +450,11 @@ Item {
     }
     Process {
         id: savesWriter
+        property string pendingInput: ""
+        stdinEnabled: true
+        clearEnvironment: true
+        environment: ({ PATH: "/usr/bin:/bin", LC_ALL: "C" })
+        onStarted: write(pendingInput)
         onExited: function(code) {
             if (code !== 0) root.addMessage("error", "The game could not be saved safely. Your existing save was left unchanged.")
             else if (root.saveNoticePending) root.addMessage("system", "Game saved for this API key.")

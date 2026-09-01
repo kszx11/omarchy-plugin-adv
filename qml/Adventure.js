@@ -48,12 +48,12 @@ function stateReadCommand(directory, filename, limit) {
     var script = "d=$1; f=$2; l=$3; [ -d \"$d\" ] && [ ! -L \"$d\" ] || exit 66; cd -P -- \"$d\" || exit 66; [ \"$(pwd -P)\" = \"$d\" ] || exit 66; [ -L \"$f\" ] && exit 66; [ ! -e \"$f\" ] && exit 0; [ -f \"$f\" ] || exit 66; n=$(stat -c %s -- \"$f\") || exit 66; [ \"$n\" -le \"$l\" ] || exit 65; dd if=\"./$f\" iflag=nofollow,nonblock bs=1 count=\"$l\" status=none"
     return timedCommand(["bash", "-c", script, "adventure-state-read", directory, filename, String(limit)])
 }
-function stateWriteCommand(directory, filename, payload, limit) {
-    // The temporary file is created 0600 inside the checked directory. rename
-    // replaces a leaf symlink rather than following it, so no post-check path
-    // access is needed.
-    var script = "d=$1; f=$2; p=$3; l=$4; [ -d \"$d\" ] && [ ! -L \"$d\" ] || exit 66; cd -P -- \"$d\" || exit 66; [ \"$(pwd -P)\" = \"$d\" ] || exit 66; [ ! -L \"$f\" ] || exit 66; [ ! -e \"$f\" ] || [ -f \"$f\" ] || exit 66; umask 077; t=$(mktemp .adventure.XXXXXX) || exit 70; trap 'rm -f -- \"$t\"' EXIT; printf '%s' \"$p\" >\"$t\" || exit 70; n=$(stat -c %s -- \"$t\") || exit 70; [ \"$n\" -le \"$l\" ] || exit 65; chmod 600 -- \"$t\" || exit 70; mv -fT -- \"$t\" \"$f\""
-    return timedCommand(["bash", "-c", script, "adventure-state-write", directory, filename, payload, String(limit)])
+function stateWriteCommand(directory, filename, limit) {
+    // The JSON line arrives on stdin, never as an argument or environment
+    // variable. The temporary file is created 0600 inside the checked
+    // directory; rename replaces a leaf symlink rather than following it.
+    var script = "d=$1; f=$2; l=$3; [ -d \"$d\" ] && [ ! -L \"$d\" ] || exit 66; cd -P -- \"$d\" || exit 66; [ \"$(pwd -P)\" = \"$d\" ] || exit 66; [ ! -L \"$f\" ] || exit 66; [ ! -e \"$f\" ] || [ -f \"$f\" ] || exit 66; IFS= read -r p || exit 70; umask 077; t=$(mktemp .adventure.XXXXXX) || exit 70; trap 'rm -f -- \"$t\"' EXIT; printf '%s\\n' \"$p\" >\"$t\" || exit 70; n=$(stat -c %s -- \"$t\") || exit 70; [ \"$n\" -le \"$l\" ] || exit 65; chmod 600 -- \"$t\" || exit 70; mv -fT -- \"$t\" \"$f\""
+    return timedCommand(["bash", "-c", script, "adventure-state-write", directory, filename, String(limit)])
 }
 
 var statsSchema = {
