@@ -1,5 +1,8 @@
 const fs = require("fs")
 const vm = require("vm")
+const os = require("os")
+const path = require("path")
+const { spawnSync } = require("child_process")
 
 const source = fs.readFileSync("qml/Adventure.js", "utf8").replace(/^\.pragma library\s*/, "")
 const panelSource = fs.readFileSync("Panel.qml", "utf8")
@@ -78,5 +81,44 @@ if (!plainTextBindings.every(binding => panelSource.includes(binding)))
     throw new Error("Model and saved-game content must be rendered as plain text")
 if (!source.includes("xhr.responseText.length > maxApiResponseCharacters") || !source.includes("typeof saved !== \"string\" || saved.length > maxSavedGameCharacters"))
     throw new Error("Network and saved-game byte limits must remain enforced")
+if (panelSource.includes("FileView") || !source.includes("iflag=nofollow") || !source.includes("chmod 600 --") || !source.includes("mv -fT --"))
+    throw new Error("Local state must use no-follow reads and explicit private write modes")
+
+function runStateCommand(command) {
+    return spawnSync(command[0], command.slice(1), { encoding: "utf8" })
+}
+const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "adventure-state-"))
+try {
+    let process = runStateCommand(context.privateStateSetupCommand(stateDirectory))
+    if (process.status !== 0 || (fs.statSync(stateDirectory).mode & 0o777) !== 0o700)
+        throw new Error("Private state directory setup must enforce mode 0700")
+    const payload = JSON.stringify({ apiKey: "test-key" }) + "\n"
+    process = runStateCommand(context.stateWriteCommand(stateDirectory, "api-key.json", payload, 4096))
+    if (process.status !== 0 || (fs.statSync(path.join(stateDirectory, "api-key.json")).mode & 0o777) !== 0o600)
+        throw new Error("State writes must atomically create mode-0600 files")
+    process = runStateCommand(context.stateReadCommand(stateDirectory, "api-key.json", 4096))
+    if (process.status !== 0 || process.stdout !== payload)
+        throw new Error("Bounded state reads must return the stored regular file")
+    process = runStateCommand(context.stateWriteCommand(stateDirectory, "api-key.json", payload, 1))
+    if (process.status !== context.stateOverflowExit || fs.readFileSync(path.join(stateDirectory, "api-key.json"), "utf8") !== payload)
+        throw new Error("Oversized state writes must fail without replacing the existing file")
+    fs.symlinkSync("/etc/passwd", path.join(stateDirectory, "unsafe.json"))
+    process = runStateCommand(context.stateReadCommand(stateDirectory, "unsafe.json", 4096))
+    if (process.status !== context.unsafeStateExit)
+        throw new Error("State readers must reject symlink leaves")
+    process = runStateCommand(context.stateWriteCommand(stateDirectory, "unsafe.json", payload, 4096))
+    if (process.status !== context.unsafeStateExit)
+        throw new Error("State writers must reject symlink leaves")
+    fs.mkdirSync(path.join(stateDirectory, "unsafe-directory"))
+    process = runStateCommand(context.stateWriteCommand(stateDirectory, "unsafe-directory", payload, 4096))
+    if (process.status !== context.unsafeStateExit)
+        throw new Error("State writers must reject directory leaves")
+    fs.symlinkSync("missing-target", path.join(stateDirectory, "broken.json"))
+    process = runStateCommand(context.stateReadCommand(stateDirectory, "broken.json", 4096))
+    if (process.status !== context.unsafeStateExit)
+        throw new Error("State readers must reject broken symlink leaves")
+} finally {
+    fs.rmSync(stateDirectory, { recursive: true, force: true })
+}
 
 console.log("Adventure logic checks passed")

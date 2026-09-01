@@ -20,10 +20,12 @@ Item {
     property bool apiKeyLoaded: false
     property bool apiKeyTouched: false
     property bool apiKeySavePending: false
-    property bool apiKeyPathSafe: false
-    property bool savesPathSafe: false
-    property string approvedApiKeyPath: ""
-    property string approvedSavesPath: ""
+    property bool apiKeyWritePending: false
+    property bool savesWritePending: false
+    property bool saveNoticePending: false
+    property string apiKeyReadOutput: ""
+    property string savesReadOutput: ""
+    property string legacySavesReadOutput: ""
     property string apiKeyValue: ""
     property string environmentApiKey: (Quickshell.env("OPENAI_API_KEY") || "").trim()
     property string activeKeyFingerprint: ""
@@ -32,9 +34,11 @@ Item {
     property bool savesCorrupt: false
     property var commandHistory: []
     property int commandHistoryIndex: 0
-    property string savesPath: Quickshell.env("HOME") + "/.local/state/omarchy-adventure.json"
+    property string legacyStateDir: Quickshell.env("HOME") + "/.local/state"
     property string privateStateDir: Quickshell.env("HOME") + "/.local/state/omarchy-adventure"
-    property string apiKeyPath: privateStateDir + "/api-key.json"
+    property string apiKeyFilename: "api-key.json"
+    property string savesFilename: "adventures.json"
+    property string legacySavesFilename: "omarchy-adventure.json"
     readonly property int maxApiKeyFileBytes: 4096
     readonly property int maxSavesFileBytes: 256 * 1024
     readonly property int maxSavesFileCharacters: Math.floor(maxSavesFileBytes / 4)
@@ -103,11 +107,14 @@ Item {
             return
         }
         apiKeySavePending = false
-        if (!apiKeyPathSafe) {
-            addMessage("error", "The private API-key file is not safe to write. The key remains available only for this session.")
+        if (apiKeyWriter.running) {
+            apiKeyWritePending = true
             return
         }
-        apiKeyFile.setText(JSON.stringify({ apiKey: apiKeyValue.trim() }, null, 2) + "\n")
+        apiKeyWriter.command = Adventure.stateWriteCommand(privateStateDir, apiKeyFilename,
+                                                           JSON.stringify({ apiKey: apiKeyValue.trim() }) + "\n",
+                                                           maxApiKeyFileBytes)
+        apiKeyWriter.running = true
     }
     function commitEnteredApiKey() {
         apiKeyTouched = true
@@ -129,6 +136,33 @@ Item {
         if (apiKeyValue.trim()) restoreForKey(apiKeyValue.trim(), false)
         if (apiKeySavePending) persistApiKey()
     }
+    function loadSavedGames(raw) {
+        try {
+            var parsed = JSON.parse(raw || "{}")
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid saves")
+            var bounded = ({})
+            var keys = Object.keys(parsed).sort()
+            if (keys.length > maxSavedGames) throw new Error("too many saves")
+            for (var index = 0; index < keys.length; index++) {
+                var key = keys[index]
+                var value = parsed[key]
+                if (/^v1-[0-9a-f]+-\d+$/.test(key) && typeof value === "string" && value.length <= Adventure.maxSavedGameCharacters)
+                    bounded[key] = value
+            }
+            savedGames = bounded
+        } catch (ignored) {
+            savedGames = ({})
+            savesCorrupt = true
+            addMessage("error", "Saved adventures could not be read. They will not be overwritten; restore the file before saving again.")
+        }
+        savesLoaded = true
+        if (savePending) persistCurrentGame()
+        if (pendingRestoreKey) {
+            const key = pendingRestoreKey
+            pendingRestoreKey = ""
+            restoreLoadedKey(key, false)
+        }
+    }
     function newGame() {
         const key = apiKeyOrExplain()
         if (!key) return
@@ -147,8 +181,12 @@ Item {
             addMessage("error", "Start or load an adventure before saving.")
             return
         }
+        if (savesCorrupt) {
+            addMessage("error", "Saved adventures are unavailable or unsafe and will not be overwritten.")
+            return
+        }
+        saveNoticePending = true
         persistCurrentGame()
-        if (!savesCorrupt) addMessage("system", "Game saved for this API key.")
     }
     function loadGame() {
         const key = apiKeyValue.trim()
@@ -167,7 +205,7 @@ Item {
         return "v1-" + (hash >>> 0).toString(16) + "-" + key.length
     }
     function persistCurrentGame() {
-        if (!activeKeyFingerprint || !Adventure.hasGame() || savesCorrupt || !savesPathSafe) return
+        if (!activeKeyFingerprint || !Adventure.hasGame() || savesCorrupt) return
         if (!savesLoaded) {
             savePending = true
             return
@@ -195,7 +233,12 @@ Item {
             return
         }
         savedGames = next
-        savedGamesFile.setText(serialized)
+        if (savesWriter.running) {
+            savesWritePending = true
+            return
+        }
+        savesWriter.command = Adventure.stateWriteCommand(privateStateDir, savesFilename, serialized, maxSavesFileBytes)
+        savesWriter.running = true
     }
     function restoreForKey(key, announceMissing) {
         if (!key) return
@@ -314,37 +357,31 @@ Item {
     ListModel { id: transcript }
     Process {
         id: ensurePrivateStateDir
-        command: ["timeout", "--signal=TERM", "--kill-after=1s", "5s", "bash", "-c",
-                  "d=$1; [ ! -L \"$d\" ] || exit 66; if [ -e \"$d\" ]; then [ -d \"$d\" ] || exit 66; else mkdir -m 700 -- \"$d\" || exit 66; fi; chmod 700 -- \"$d\"",
-                  "adventure-private-state", root.privateStateDir]
+        command: Adventure.privateStateSetupCommand(root.privateStateDir)
         onExited: function(code) {
-            if (code !== 0) {
+            if (code === 0) {
+                root.apiKeyReadOutput = ""
+                root.savesReadOutput = ""
+                apiKeyReader.command = Adventure.stateReadCommand(root.privateStateDir, root.apiKeyFilename, root.maxApiKeyFileBytes)
+                savesReader.command = Adventure.stateReadCommand(root.privateStateDir, root.savesFilename, root.maxSavesFileBytes)
+                apiKeyReader.running = true
+                savesReader.running = true
+            } else {
                 root.apiKeyLoaded = true
-                root.apiKeyPathSafe = false
-                root.addMessage("error", "The private state directory is unsafe or unavailable. API keys will not be stored.")
-                apiKeyFile.path = ""
-                savesReadCheck.running = true
-                return
+                root.savesLoaded = true
+                root.savesCorrupt = true
+                root.addMessage("error", "The private state directory is unsafe or unavailable. Local keys and saves will not be used.")
             }
-            apiKeyReadCheck.running = true
-            savesReadCheck.running = true
         }
     }
     Process {
-        id: apiKeyReadCheck
-        command: ["timeout", "--signal=TERM", "--kill-after=1s", "5s", "bash", "-c",
-                  "d=$1; f=$2; l=$3; [ -d \"$d\" ] && [ ! -L \"$d\" ] && [ ! -L \"$f\" ] || exit 66; [ ! -e \"$f\" ] && exit 0; [ -f \"$f\" ] || exit 66; n=$(stat -c %s -- \"$f\") || exit 66; [ \"$n\" -le \"$l\" ] || exit 65",
-                  "adventure-api-key-read", root.privateStateDir, root.apiKeyPath, String(root.maxApiKeyFileBytes)]
+        id: apiKeyReader
+        stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.apiKeyReadOutput = text }
         onExited: function(code) {
-            if (code === 0) {
-                root.apiKeyPathSafe = true
-                root.approvedApiKeyPath = root.apiKeyPath
-                apiKeyFile.path = root.approvedApiKeyPath
-                apiKeyFile.reload()
-            } else {
+            if (code === 0) root.loadApiKey(root.apiKeyReadOutput)
+            else {
                 root.apiKeyLoaded = true
-                root.apiKeyPathSafe = false
-                root.addMessage("error", code === 65
+                root.addMessage("error", code === Adventure.stateOverflowExit
                     ? "The remembered API-key file is too large and was ignored."
                     : "The remembered API-key file is unsafe and was ignored.")
                 if (root.environmentApiKey.length > 0) root.apiKeyValue = root.environmentApiKey
@@ -353,77 +390,57 @@ Item {
         }
     }
     Process {
-        id: savesReadCheck
-        command: ["timeout", "--signal=TERM", "--kill-after=1s", "5s", "bash", "-c",
-                  "f=$1; l=$2; [ ! -L \"$f\" ] || exit 66; [ ! -e \"$f\" ] && exit 0; [ -f \"$f\" ] || exit 66; n=$(stat -c %s -- \"$f\") || exit 66; [ \"$n\" -le \"$l\" ] || exit 65",
-                  "adventure-saves-read", root.savesPath, String(root.maxSavesFileBytes)]
+        id: savesReader
+        stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.savesReadOutput = text }
         onExited: function(code) {
-            if (code === 0) {
-                root.savesPathSafe = true
-                root.approvedSavesPath = root.savesPath
-                savedGamesFile.path = root.approvedSavesPath
-                savedGamesFile.reload()
-            } else {
+            if (code !== 0) {
                 root.savesLoaded = true
-                root.savesPathSafe = false
                 root.savesCorrupt = true
-                root.addMessage("error", code === 65
+                root.addMessage("error", code === Adventure.stateOverflowExit
                     ? "Saved adventures are too large and were not read."
                     : "Saved adventures are unsafe and were not read.")
+            } else if (root.savesReadOutput.trim()) {
+                root.loadSavedGames(root.savesReadOutput)
+            } else {
+                root.legacySavesReadOutput = ""
+                legacySavesReader.command = Adventure.stateReadCommand(root.legacyStateDir, root.legacySavesFilename, root.maxSavesFileBytes)
+                legacySavesReader.running = true
             }
         }
     }
-    FileView {
-        id: apiKeyFile
-        path: ""
-        watchChanges: false
-        atomicWrites: true
-        printErrors: false
-        onLoaded: { if (root.approvedApiKeyPath && root.approvedApiKeyPath === path) root.loadApiKey(text()) }
-        onLoadFailed: { if (root.approvedApiKeyPath && root.approvedApiKeyPath === path) root.loadApiKey("") }
-    }
-    FileView {
-        id: savedGamesFile
-        path: ""
-        watchChanges: false
-        atomicWrites: true
-        printErrors: false
-        onLoaded: {
-            if (!root.approvedSavesPath || root.approvedSavesPath !== path) return
-            try {
-                var parsed = JSON.parse(text() || "{}")
-                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid saves")
-                var bounded = ({})
-                var keys = Object.keys(parsed).sort()
-                if (keys.length > root.maxSavedGames) throw new Error("too many saves")
-                for (var index = 0; index < keys.length; index++) {
-                    var key = keys[index]
-                    var value = parsed[key]
-                    if (/^v1-[0-9a-f]+-\d+$/.test(key) && typeof value === "string" && value.length <= Adventure.maxSavedGameCharacters)
-                        bounded[key] = value
-                }
-                root.savedGames = bounded
-            } catch (ignored) {
-                root.savedGames = ({})
+    Process {
+        id: legacySavesReader
+        stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.legacySavesReadOutput = text }
+        onExited: function(code) {
+            if (code === 0) root.loadSavedGames(root.legacySavesReadOutput)
+            else {
+                root.savesLoaded = true
                 root.savesCorrupt = true
-                root.addMessage("error", "Saved adventures could not be read. They will not be overwritten; restore the file before saving again.")
-            }
-            root.savesLoaded = true
-            if (root.savePending) root.persistCurrentGame()
-            if (root.pendingRestoreKey) {
-                const key = root.pendingRestoreKey
-                root.pendingRestoreKey = ""
-                root.restoreLoadedKey(key, false)
+                root.addMessage("error", code === Adventure.stateOverflowExit
+                    ? "Legacy saved adventures are too large and were not read."
+                    : "Legacy saved adventures are unsafe and were not read.")
             }
         }
-        onLoadFailed: {
-            if (!root.approvedSavesPath || root.approvedSavesPath !== path) return
-            root.savesLoaded = true
-            if (root.savePending) root.persistCurrentGame()
-            if (root.pendingRestoreKey) {
-                const key = root.pendingRestoreKey
-                root.pendingRestoreKey = ""
-                root.restoreLoadedKey(key, false)
+    }
+    Process {
+        id: apiKeyWriter
+        onExited: function(code) {
+            if (code !== 0) root.addMessage("error", "The API key could not be stored safely. It remains available only for this session.")
+            if (root.apiKeyWritePending) {
+                root.apiKeyWritePending = false
+                root.persistApiKey()
+            }
+        }
+    }
+    Process {
+        id: savesWriter
+        onExited: function(code) {
+            if (code !== 0) root.addMessage("error", "The game could not be saved safely. Your existing save was left unchanged.")
+            else if (root.saveNoticePending) root.addMessage("system", "Game saved for this API key.")
+            root.saveNoticePending = false
+            if (root.savesWritePending) {
+                root.savesWritePending = false
+                root.persistCurrentGame()
             }
         }
     }

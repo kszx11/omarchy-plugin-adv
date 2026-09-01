@@ -16,7 +16,7 @@ Every new adventure opens in a broad named region with at least three meaningful
 - Internet access and an OpenAI API key with API billing.
 - No elevated privileges, install hooks, or external local services.
 
-The game sends player commands and game context directly to the OpenAI API. It reads `OPENAI_API_KEY` when available; otherwise, an entered key is stored locally in `~/.local/state/omarchy-adventure/api-key.json`, inside an owner-only directory. Game saves are stored locally in `~/.local/state/omarchy-adventure.json`.
+The game sends player commands and game context directly to the OpenAI API. It reads `OPENAI_API_KEY` when available; otherwise, an entered key is stored locally in `~/.local/state/omarchy-adventure/api-key.json`, inside an owner-only directory. Game saves are stored locally in `~/.local/state/omarchy-adventure/adventures.json`. Both files are written with owner-only permissions.
 
 ## Install
 
@@ -38,7 +38,7 @@ After installation, enable **Adventure** in the bar widget chooser, or open it d
 omarchy-shell shell summon io.github.kszx11.adventure '{}'
 ```
 
-The panel looks first for `OPENAI_API_KEY` in the Omarchy shell environment. If it is not set, an API key entered in the panel is remembered locally at `~/.local/state/omarchy-adventure/api-key.json`; that directory is created with owner-only access. Saves remain associated with a non-secret fingerprint of the key, so reopening the panel restores that key's adventure.
+The panel looks first for `OPENAI_API_KEY` in the Omarchy shell environment. If it is not set, an API key entered in the panel is remembered locally at `~/.local/state/omarchy-adventure/api-key.json`; that directory and its saved files are owner-only. Saves remain associated with a non-secret fingerprint of the key, so reopening the panel restores that key's adventure. Existing saves at the older `~/.local/state/omarchy-adventure.json` path are read once for compatibility and move to the private directory when next saved.
 
 To make the key available through the environment, launch the Omarchy shell from a session that exports `OPENAI_API_KEY`. A key entered in the panel is the practical fallback when the shell was not launched with that variable.
 
@@ -56,4 +56,4 @@ node tests/adventure-logic.test.js
 omarchy plugin remove io.github.kszx11.adventure
 ```
 
-Removing the plugin leaves your local key and saves intact. To erase that data as well, remove `~/.local/state/omarchy-adventure/` and `~/.local/state/omarchy-adventure.json` yourself.
+Removing the plugin leaves your local key and saves intact. To erase that data as well, remove `~/.local/state/omarchy-adventure/` and, if present, the older `~/.local/state/omarchy-adventure.json` yourself.
