@@ -10,44 +10,42 @@ Requires an OpenAI API key with API billing; a ChatGPT subscription alone does n
 
 Every new adventure opens in a broad named region with at least three meaningful routes. As you travel, the game reveals connected settlements, wilderness, landmarks, and other named locations; the map records routes you have discovered. Ordinary scenes keep at least two ways forward, while true endings and temporary defeats are the only intentional exceptions.
 
-## Requirements and privacy
+## What you need
 
 - Omarchy 4.0 (Quattro) with Quickshell plugin support.
 - Internet access and an OpenAI API key with API billing.
-- No elevated privileges, install hooks, or external local services.
 
-The game sends player commands and game context directly to the OpenAI API. It reads `OPENAI_API_KEY` when available; otherwise, an entered key is stored locally in `~/.local/state/omarchy-adventure/api-key.json`, inside an owner-only directory. Game saves are stored locally in `~/.local/state/omarchy-adventure/adventures.json`. Both files are written with owner-only permissions.
+A ChatGPT subscription by itself does not include OpenAI API access or API billing.
 
 ## Install
 
-Validate the checked-out plugin:
+Install from the Adventure repository:
 
 ```bash
-omarchy plugin validate .
+omarchy plugin add https://github.com/kszx11/omarchy-plugin-adv.git --enable
 ```
 
-After pushing this directory to a trusted Git repository, install it with:
+Omarchy will warn that plugins run unsandboxed; install only repositories you trust. When prompted, choose where Adventure should appear in the bar. Click its icon to open the game.
 
-```bash
-omarchy plugin add https://github.com/YOUR-ACCOUNT/omarchy-plugin-adv.git --enable
-```
-
-After installation, enable **Adventure** in the bar widget chooser, or open it directly:
+You can also open Adventure from a terminal:
 
 ```bash
 omarchy-shell shell summon io.github.kszx11.adventure '{}'
 ```
 
-The panel looks first for `OPENAI_API_KEY` in the Omarchy shell environment. If it is not set, an API key entered in the panel is remembered locally at `~/.local/state/omarchy-adventure/api-key.json`; that directory and its saved files are owner-only. Saves remain associated with a non-secret fingerprint of the key, so reopening the panel restores that key's adventure. Existing saves at the older `~/.local/state/omarchy-adventure.json` path are read once for compatibility and move to the private directory when next saved.
+## Start playing
 
-To make the key available through the environment, launch the Omarchy shell from a session that exports `OPENAI_API_KEY`. A key entered in the panel is the practical fallback when the shell was not launched with that variable.
+1. Open Adventure from its bar icon.
+2. Enter your OpenAI API key in the right-hand panel.
+3. Describe the place and time for your adventure, then select **New game**.
+4. Use the numbered choices or type commands such as `look`, `go to <place>`, `talk to <person>`, or `examine <thing>`.
 
-## Verify core logic
+Your entered API key is remembered only on your device in an owner-only local directory. Adventure uses `OPENAI_API_KEY` automatically if the Omarchy shell was started with that environment variable. Your key and save data are never added to the plugin repository.
 
-The save migration, NPC matching, exit validation, and transcript serialization checks need only Node.js:
+## Updating
 
 ```bash
-node tests/adventure-logic.test.js
+omarchy plugin update io.github.kszx11.adventure
 ```
 
 ## Remove
@@ -56,4 +54,4 @@ node tests/adventure-logic.test.js
 omarchy plugin remove io.github.kszx11.adventure
 ```
 
-Removing the plugin leaves your local key and saves intact. To erase that data as well, remove `~/.local/state/omarchy-adventure/` and, if present, the older `~/.local/state/omarchy-adventure.json` yourself.
+Removing the plugin keeps your local API key and saved adventures. If you also want to erase them, delete the `~/.local/state/omarchy-adventure/` directory.
