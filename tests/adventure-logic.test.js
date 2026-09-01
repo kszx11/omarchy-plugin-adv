@@ -62,6 +62,8 @@ if (context.game.world.facts[0] !== "Mara Vell says the bell remembers names.")
     throw new Error("New durable world facts should persist across turns")
 if (context.historyCharacters([{ content: "abc" }, { content: "de" }]) !== 5)
     throw new Error("History size accounting failed")
+if (!context.statsText().includes("Strength (STR)") || !context.statsText().includes("Stats shape uncertain actions") && !context.statsText().includes("Character stats influence uncertain actions"))
+    throw new Error("Character stats must explain their abbreviations and use")
 
 if (context.responseText({ output_text: "Direct text" }) !== "Direct text")
     throw new Error("Responses API direct text parsing failed")
@@ -79,6 +81,9 @@ const plainTextBindings = [
 ]
 if (!plainTextBindings.every(binding => panelSource.includes(binding)))
     throw new Error("Model and saved-game content must be rendered as plain text")
+if (!panelSource.includes("text: modelData.name + \" · \" + modelData.value + \" — \" + modelData.rating") ||
+    !panelSource.includes("text: modelData.code + \" — \" + modelData.description"))
+    throw new Error("Character stat values and descriptions must remain explicitly rendered")
 if (!source.includes("xhr.responseText.length > maxApiResponseCharacters") || !source.includes("typeof saved !== \"string\" || saved.length > maxSavedGameCharacters"))
     throw new Error("Network and saved-game byte limits must remain enforced")
 if (panelSource.includes("FileView") || !source.includes("iflag=nofollow") || !source.includes("chmod 600 --") || !source.includes("mv -fT --"))

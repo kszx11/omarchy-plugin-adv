@@ -14,6 +14,8 @@ Item {
     readonly property bool opened: gameWindow.visible
     property bool closingFromHost: false
     property bool hasOpened: false
+    // Kept behind a feature switch until stat outcomes are host-defined.
+    property bool showCharacterSection: false
     property bool busy: false
     property string busyMessage: ""
     property bool savesLoaded: false
@@ -291,6 +293,22 @@ Item {
             if (actions[index].section === section && actions[index].label === label) return index + 1
         }
         return 0
+    }
+    function characterStatRows() {
+        var stats = root.gameState.stats || ({})
+        return Adventure.statNames.filter(function(code) {
+            return typeof stats[code] === "number" && isFinite(stats[code])
+        }).map(function(code) {
+            var detail = Adventure.statDetail(code)
+            var value = stats[code]
+            return {
+                code: code,
+                name: detail.name,
+                description: detail.description,
+                value: value,
+                rating: Adventure.statRating(value)
+            }
+        })
     }
     function activateSceneAction(number) {
         var action = sceneActions()[number - 1]
@@ -581,9 +599,44 @@ Item {
                                         Label { visible: modelData[1].length === 0; text: "None"; color: Color.muted }
                                     }
                                 }
-                                Rectangle { width: parent.width; height: 1; color: Color.popups.border }
-                                Label { text: "CHARACTER"; color: Color.accent; font.bold: true; font.pixelSize: 12 }
-                                Repeater { model: Object.keys(root.gameState.stats); delegate: Label { text: modelData + ": " + root.gameState.stats[modelData]; textFormat: Text.PlainText; color: Color.foreground } }
+                                Column {
+                                    visible: root.showCharacterSection
+                                    width: parent.width
+                                    spacing: 8
+                                    Rectangle { width: parent.width; height: 1; color: Color.popups.border }
+                                    Label { text: "CHARACTER"; color: Color.accent; font.bold: true; font.pixelSize: 12 }
+                                    Label {
+                                        text: "Stats shape uncertain actions. Type stats for details."
+                                        width: parent.width
+                                        wrapMode: Text.Wrap
+                                        color: Color.muted
+                                        font.pixelSize: 11
+                                    }
+                                    Repeater {
+                                        model: root.characterStatRows()
+                                        delegate: Column {
+                                            width: parent.width
+                                            spacing: 1
+                                            Label {
+                                                text: modelData.name + " · " + modelData.value + " — " + modelData.rating
+                                                textFormat: Text.PlainText
+                                                width: parent.width
+                                                wrapMode: Text.Wrap
+                                                elide: Text.ElideNone
+                                                color: Color.foreground
+                                            }
+                                            Label {
+                                                text: modelData.code + " — " + modelData.description
+                                                textFormat: Text.PlainText
+                                                width: parent.width
+                                                wrapMode: Text.Wrap
+                                                elide: Text.ElideNone
+                                                color: Color.muted
+                                                font.pixelSize: 11
+                                            }
+                                        }
+                                    }
+                                }
                                 Label { text: "INVENTORY"; color: Color.muted; font.bold: true; font.pixelSize: 11 }
                                 Label { text: root.gameState.inventory.join(", ") || "Empty"; textFormat: Text.PlainText; width: parent.width; wrapMode: Text.Wrap; color: Color.foreground }
                             }
